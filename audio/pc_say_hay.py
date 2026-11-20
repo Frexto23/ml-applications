@@ -1,23 +1,35 @@
 import torch
-waveglow = torch.hub.load('NVIDIA/DeepLearningExamples:torchhub', 'nvidia_waveglow', model_math='fp32', progress=True)
-print("waveglow loaded")
+import sounddevice
 
-waveglow = waveglow.remove_weightnorm(waveglow)
-waveglow = waveglow.to('cuda')
-waveglow.eval()
+class Speaker:
+    RATE = 22050
 
-tacotron2 = torch.hub.load('NVIDIA/DeepLearningExamples:torchhub', 'nvidia_tacotron2', model_math='fp32')
-print("tocotron2 loaded")
-tacotron2 = tacotron2.to('cuda')
-tacotron2.eval()
+    def __init__(self):
+        self._waveglow = torch.hub.load('NVIDIA/DeepLearningExamples:torchhub', 'nvidia_waveglow', model_math='fp32')
 
-text = "hello world, I missed you so much"
+        self._waveglow = self._waveglow.remove_weightnorm(self._waveglow)
+        self._waveglow = self._waveglow.to('cuda')
+        self._waveglow.eval()
 
-utils = torch.hub.load('NVIDIA/DeepLearningExamples:torchhub', 'nvidia_tts_utils')
-sequences, lengths = utils.prepare_input_sequence([text])
+        self._tacotron2 = torch.hub.load('NVIDIA/DeepLearningExamples:torchhub', 'nvidia_tacotron2', model_math='fp32')
+        self._tacotron2 = self._tacotron2.to('cuda')
+        self._tacotron2.eval()
 
-with torch.no_grad():
-    mel, _, _ = tacotron2.infer(sequences, lengths)
-    audio = waveglow.infer(mel)
-audio_numpy = audio[0].data.cpu().numpy()
-rate = 22050
+        self._utils = torch.hub.load('NVIDIA/DeepLearningExamples:torchhub', 'nvidia_tts_utils')
+
+    def convert(self, text):
+        sequences, lengths = self._utils.prepare_input_sequence([text])
+
+        with torch.no_grad():
+            mel, _, _ = self._tacotron2.infer(sequences, lengths)
+            audio = self._waveglow.infer(mel)
+        audio_numpy = audio[0].data.cpu().numpy()
+
+        return audio_numpy
+
+    def speak(self, text: str):
+        if not text:
+            return
+        audio_numpy = self.convert(text)
+        sounddevice.play(audio_numpy, samplerate=self.RATE)
+        sounddevice.wait()
